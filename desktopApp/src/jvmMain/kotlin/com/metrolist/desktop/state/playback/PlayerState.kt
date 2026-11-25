@@ -2684,10 +2684,20 @@ object PlayerState {
     fun setPlaybackSpeed(speed: Float) {
         if (!speed.isFinite()) return
         val normalizedSpeed = speed.coerceIn(0.5f, 2f)
-        if (deviceConnect.intercept(DcPlaybackCommand(DcPlaybackAction.SPEED, speed = normalizedSpeed))) return
+        val linked = Settings.shared.varispeed
+        if (deviceConnect.intercept(DcPlaybackCommand(DcPlaybackAction.SPEED, speed = normalizedSpeed))) {
+            if (linked) setPlaybackPitch(normalizedSpeed)
+            return
+        }
         if (ListenTogetherState.listenTogetherManager.isInRoom.value) return
         Settings.shared.playbackSpeed = normalizedSpeed
-        applyPlaybackSpeed(normalizedSpeed)
+        if (linked) {
+            Settings.shared.playbackPitch = normalizedSpeed
+            player.setTempoPitch(speed = normalizedSpeed, pitch = normalizedSpeed)
+            video.setPlaybackSpeed(normalizedSpeed)
+        } else {
+            applyPlaybackSpeed(normalizedSpeed)
+        }
     }
 
     internal fun applyPlaybackSpeed(speed: Float) {

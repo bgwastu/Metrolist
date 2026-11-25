@@ -14,7 +14,13 @@ Android's System equalizer opens the installed audio-effects panel for the curre
 
 ## Tempo and pitch
 
-Keep speed and pitch independent. Android uses the software path when pitch requires it. Desktop uses `AudioTempoProcessor`; iOS uses AVPlayer's spectral algorithm for speed and a tap-owned NewTimePitch unit for independent pitch.
+The Tempo and pitch controls can link pitch to playback speed through the Varispeed lock. Linking matches pitch to the current speed. Unlocking leaves the current speed and pitch available for independent adjustment.
+
+Android uses Signalsmith Stretch for independent software tempo and pitch processing, with Media3 Sonic as a fallback. macOS and Linux desktop builds use Signalsmith Stretch when the JNI library is available. Desktop uses FFmpeg on Windows and when the native library is unavailable. When speed and pitch match, Android and desktop use their existing resamplers. iOS uses AVPlayer's spectral algorithm for speed and a tap-owned NewTimePitch unit for independent pitch.
+
+The Android and desktop playback clocks account for the old speed until queued audio at that speed has played. Timed lyrics use that media position, with user offsets applied in track time.
+
+The vendored headers and MIT licenses come from [Signalsmith Stretch 1.3.2](https://github.com/Signalsmith-Audio/signalsmith-stretch/tree/57b93f4e9206a089a45387eaa39bdc9f310d3308) and [Signalsmith Linear 0.6.6](https://github.com/Signalsmith-Audio/linear/tree/7bb1c8f36794d6980080ce817c91f8da8fe56a66).
 
 Pitch changes must reach both players during a crossfade. HLS cannot apply pitch-changing presets. Device Connect sends pitch only to peers advertising support; see [compatibility](device-connect.md#compatibility-and-queues).
 

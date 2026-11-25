@@ -201,10 +201,6 @@ internal fun SettingsUiRegistryBuilder.registerPlaybackSettings(host: SharedSett
                     val rounded = (value * 20).roundToInt() / 20f
                     settings.playbackSpeed = rounded
                     host.onFloatSettingChanged(SettingsChangeEffect.PLAYBACK_SPEED, rounded)
-                    if (settings.varispeed) {
-                        settings.playbackPitch = rounded
-                        host.onFloatSettingChanged(SettingsChangeEffect.PLAYBACK_PITCH, rounded)
-                    }
                 }
                 if (!settings.varispeed) {
                     val playbackPitchSemitones = playbackPitchToSemitones(settings.playbackPitch)

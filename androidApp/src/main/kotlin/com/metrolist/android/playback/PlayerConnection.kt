@@ -1213,9 +1213,18 @@ class PlayerConnection(
 
     override fun setPlaybackSpeed(speed: Float) {
         val normalizedSpeed = normalizePlaybackTempo(speed) ?: return
-        if (AndroidDeviceConnect.intercept(DcPlaybackCommand(DcPlaybackAction.SPEED, speed = normalizedSpeed))) return
+        val linked = Settings.shared.varispeed
+        if (AndroidDeviceConnect.intercept(DcPlaybackCommand(DcPlaybackAction.SPEED, speed = normalizedSpeed))) {
+            if (linked) setPlaybackPitch(normalizedSpeed)
+            return
+        }
         Settings.shared.playbackSpeed = normalizedSpeed
-        musicService?.player?.setPlaybackSpeed(normalizedSpeed)
+        if (linked) {
+            Settings.shared.playbackPitch = normalizedSpeed
+            musicService?.player?.setTempoPitch(normalizedSpeed, normalizedSpeed)
+        } else {
+            musicService?.player?.setPlaybackSpeed(normalizedSpeed)
+        }
     }
 
     fun setRepeatMode(mode: Int) {

@@ -5011,6 +5011,7 @@
     <string name="tempo_and_pitch">Tempo and pitch</string>
     <string name="playback_pitch">Pitch (semitones)</string>
     <!-- Translators: Option label for linking pitch to playback speed in the settings. -->
+    <string name="playback_pitch_follows_speed">Link pitch to playback speed</string>
     <string name="varispeed">Varispeed</string>
     <!-- Translators: Supporting text beneath the varispeed option in the settings. -->
     <string name="varispeed_description">Link pitch to playback speed for tape-style speedup and slowdown</string>

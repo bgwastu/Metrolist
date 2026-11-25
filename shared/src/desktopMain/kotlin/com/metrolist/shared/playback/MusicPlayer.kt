@@ -1045,6 +1045,19 @@ class MusicPlayer(
         }
     }
 
+    fun setTempoPitch(
+        speed: Float,
+        pitch: Float,
+    ) {
+        synchronized(playerLock) {
+            audioPlayer.setTempoPitch(speed, pitch)
+            nextPlayer?.setTempoPitch(speed, pitch)
+            _playbackSpeed.value = speed
+            _playbackPitch.value = pitch
+            sampleChanges.trySend(Unit)
+        }
+    }
+
     fun setQueue(
         songs: List<SongItem>,
         startIndex: Int = 0,

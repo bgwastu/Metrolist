@@ -211,6 +211,7 @@ class AudioPlayer(
                         renderer = preparedRenderer
                         preparedRenderer?.setVolume(effectiveVolume())
                         preparedRenderer?.normalizationGain = normalizationGain
+                        preparedRenderer?.setTempoPitch(currentPlaybackSpeed, currentPlaybackPitch)
                         isPaused = startPaused
                         isRunning = false
                         acceptingSeeks = true
@@ -242,9 +243,8 @@ class AudioPlayer(
             synchronized(preparationLock) {
                 it.setVolume(effectiveVolume())
                 it.normalizationGain = normalizationGain
+                it.setTempoPitch(currentPlaybackSpeed, currentPlaybackPitch)
             }
-            it.setPlaybackSpeed(currentPlaybackSpeed)
-            it.setPlaybackPitch(currentPlaybackPitch)
         }
 
     private fun ensureRenderer(decoder: AudioDecoder): AudioRenderer? =
@@ -615,14 +615,31 @@ class AudioPlayer(
 
     fun setPlaybackPitch(pitch: Float) {
         require(pitch.isFinite() && pitch in 0.5f..2f)
-        currentPlaybackPitch = pitch
-        renderer?.setPlaybackPitch(pitch)
+        synchronized(preparationLock) {
+            currentPlaybackPitch = pitch
+            renderer?.setPlaybackPitch(pitch)
+        }
     }
 
     fun setPlaybackSpeed(speed: Float) {
         require(speed.isFinite() && speed in 0.5f..2f)
-        currentPlaybackSpeed = speed
-        renderer?.setPlaybackSpeed(speed)
+        synchronized(preparationLock) {
+            currentPlaybackSpeed = speed
+            renderer?.setPlaybackSpeed(speed)
+        }
+    }
+
+    fun setTempoPitch(
+        speed: Float,
+        pitch: Float,
+    ) {
+        require(speed.isFinite() && speed in 0.5f..2f)
+        require(pitch.isFinite() && pitch in 0.5f..2f)
+        synchronized(preparationLock) {
+            currentPlaybackSpeed = speed
+            currentPlaybackPitch = pitch
+            renderer?.setTempoPitch(speed, pitch)
+        }
     }
 
     fun getVolume(): Float = synchronized(preparationLock) { renderer?.getVolume() ?: effectiveVolume() }

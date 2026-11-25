@@ -382,6 +382,7 @@ fun LyricsView(
                 lyrics.any { it.hasAnimatedWordTiming(Settings.shared.isLyricsRomanizationActive) }
         }
 
+    val currentLyricsSpeed by rememberUpdatedState(if (isCasting) 1f else playbackSpeed)
     val clockEnabled = isVisible && lyrics.isNotEmpty() && isLrcSynced
     val deadlines =
         remember(timelineItems, lyrics, isWordByWord) {
@@ -996,7 +997,7 @@ fun LyricsView(
                         val elapsedMs = lastMark.elapsedNow().inWholeMilliseconds
                         val positionJumped =
                             target.isSeek ||
-                                (abs(positionDelta) > 1000L && abs(positionDelta - elapsedMs * Settings.shared.playbackSpeed) > 1000L)
+                                (abs(positionDelta) > 1000L && abs(positionDelta - elapsedMs * currentLyricsSpeed) > 1000L)
                         lastPositionMs = positionMs
                         lastMark = TimeSource.Monotonic.markNow()
 

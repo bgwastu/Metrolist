@@ -20,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -31,7 +32,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,6 +51,7 @@ import com.metrolist.shared.generated.resources.cancel
 import com.metrolist.shared.generated.resources.delete
 import com.metrolist.shared.generated.resources.done
 import com.metrolist.shared.generated.resources.playback_pitch
+import com.metrolist.shared.generated.resources.playback_pitch_follows_speed
 import com.metrolist.shared.generated.resources.playback_speed
 import com.metrolist.shared.generated.resources.playback_speed_value
 import com.metrolist.shared.generated.resources.reset
@@ -91,15 +92,7 @@ fun TempoPitchControls(
     val speedLabel = stringResource(Res.string.playback_speed)
     val pitchLabel = stringResource(Res.string.playback_pitch)
     val semitones = playbackPitchToSemitones(pitch)
-    val linkPitchToSpeed = varispeed && speedEnabled && onPitchChange != null
-    val applySpeed: (Float) -> Unit = { value ->
-        onSpeedChange(value)
-        if (linkPitchToSpeed) onPitchChange(value)
-    }
-    val currentSpeed by rememberUpdatedState(speed)
-    LaunchedEffect(linkPitchToSpeed) {
-        if (linkPitchToSpeed) onPitchChange(currentSpeed)
-    }
+    val linked = varispeed && onPitchChange != null
     val presets = Settings.shared.tempoPitchPresets
     var savingPreset by rememberSaveable { mutableStateOf(false) }
     var presetName by rememberSaveable { mutableStateOf("") }
@@ -158,9 +151,29 @@ fun TempoPitchControls(
             range = 0.5f..2f,
             steps = 29,
             enabled = speedEnabled,
-            onValueChange = applySpeed,
+            onValueChange = onSpeedChange,
+            trailingControl =
+                if (onPitchChange != null) {
+                    {
+                        IconToggleButton(
+                            checked = linked,
+                            enabled = speedEnabled,
+                            onCheckedChange = { enabled ->
+                                Settings.shared.varispeed = enabled
+                                if (enabled) onPitchChange(speed)
+                            },
+                        ) {
+                            Icon(
+                                if (linked) MetrolistIcons.Rounded.Lock else MetrolistIcons.Rounded.LockOpen,
+                                stringResource(Res.string.playback_pitch_follows_speed),
+                            )
+                        }
+                    }
+                } else {
+                    null
+                },
         )
-        if (!varispeed && onPitchChange != null) {
+        if (!linked && onPitchChange != null) {
             Spacer(Modifier.height(16.dp))
             TempoPitchSlider(
                 label = pitchLabel,
@@ -182,8 +195,8 @@ fun TempoPitchControls(
             presets.forEach { preset ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(
-                        onClick = { preset.apply(speedEnabled, varispeed, onSpeedChange, onPitchChange) },
-                        enabled = preset.canApply(speedEnabled, varispeed, onPitchChange != null),
+                        onClick = { preset.apply(speedEnabled, linked, onSpeedChange, onPitchChange) },
+                        enabled = preset.canApply(speedEnabled, linked, onPitchChange != null),
                         modifier = Modifier.weight(1f),
                         shapes = ButtonDefaults.shapes(),
                     ) { Text(preset.name) }
@@ -201,8 +214,8 @@ fun TempoPitchControls(
         ) {
             TextButton(
                 onClick = {
-                    if (speedEnabled) applySpeed(1f)
-                    if (!varispeed) onPitchChange?.invoke(1f)
+                    if (speedEnabled) onSpeedChange(1f)
+                    if (!linked) onPitchChange?.invoke(1f)
                 },
                 shapes = ButtonDefaults.shapes(),
             ) { Text(stringResource(Res.string.reset)) }
@@ -223,6 +236,7 @@ private fun TempoPitchSlider(
     showTicks: Boolean = true,
     enabled: Boolean = true,
     onValueChange: (Float) -> Unit,
+    trailingControl: (@Composable () -> Unit)? = null,
 ) {
     val haptics = rememberMetrolistHaptics()
     val detents = remember(range, steps) { SliderDetents(range, steps, value) }
@@ -232,6 +246,7 @@ private fun TempoPitchSlider(
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { editing = true }, enabled = enabled, shapes = ButtonDefaults.shapes()) { Text(valueText) }
         Spacer(Modifier.weight(1f))
+        trailingControl?.invoke()
         TextButton(
             onClick = { onValueChange(defaultValue) },
             enabled = enabled && value != defaultValue,

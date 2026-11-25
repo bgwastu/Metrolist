@@ -134,8 +134,7 @@ class AudioRenderer internal constructor(
                         if (
                             tempoProcessor != null &&
                             (
-                                processorPitch != playbackPitch ||
-                                    (playbackSpeed == 1f && playbackPitch == 1f) ||
+                                (playbackSpeed == 1f && playbackPitch == 1f) ||
                                     tempoProcessor?.requiresRebuild(playbackSpeed, playbackPitch) == true
                             )
                         ) {
@@ -152,6 +151,10 @@ class AudioRenderer internal constructor(
                         if (tempoProcessor != null && processorSpeed != playbackSpeed) {
                             tempoProcessor?.setSpeed(playbackSpeed)
                             processorSpeed = playbackSpeed
+                        }
+                        if (tempoProcessor != null && processorPitch != playbackPitch) {
+                            tempoProcessor?.setPitch(playbackPitch)
+                            processorPitch = playbackPitch
                         }
                         if (input.isNotEmpty()) {
                             tempoProcessor?.process(input) { add(RenderedAudioChunk(it, processorSpeed)) }
@@ -567,20 +570,27 @@ class AudioRenderer internal constructor(
 
     fun setPlaybackPitch(pitch: Float) {
         require(pitch.isFinite() && pitch in 0.5f..2f)
-        synchronized(safeLock) { playbackPitch = pitch }
+        synchronized(safeLock) {
+            playbackPitch = pitch
+        }
     }
 
     fun setPlaybackSpeed(speed: Float) {
         require(speed.isFinite() && speed in 0.5f..2f)
         synchronized(safeLock) {
-            if (speed != playbackSpeed) {
-                val processor = tempoProcessor
-                if (processor != null && !processor.requiresRebuild(speed, playbackPitch)) {
-                    processor.setSpeed(speed)
-                    processorSpeed = speed
-                }
-                playbackSpeed = speed
-            }
+            playbackSpeed = speed
+        }
+    }
+
+    fun setTempoPitch(
+        speed: Float,
+        pitch: Float,
+    ) {
+        require(speed.isFinite() && speed in 0.5f..2f)
+        require(pitch.isFinite() && pitch in 0.5f..2f)
+        synchronized(safeLock) {
+            playbackSpeed = speed
+            playbackPitch = pitch
         }
     }
 
@@ -687,11 +697,11 @@ internal class AudioPositionClock(
 ) {
     private data class Segment(
         val lineFrame: Long,
-        val mediaMs: Long,
+        val mediaMs: Double,
         val speed: Float,
     )
 
-    private val segments = mutableListOf(Segment(0L, 0L, 1f))
+    private val segments = mutableListOf(Segment(0L, 0.0, 1f))
     private var lastPositionMs = 0L
     private var anchorMs = 0L
     private var skippedFrames = 0L
@@ -715,7 +725,7 @@ internal class AudioPositionClock(
     ) {
         if (skippedFrames == 0L) return
         // Anchor trailing silence at the actual output boundary because tempo filters round frame counts.
-        segments += Segment(lineFrame, anchorMs + (outputFrames * 1_000.0 / sampleRate).toLong(), segments.last().speed)
+        segments += Segment(lineFrame, anchorMs + outputFrames * 1_000.0 / sampleRate, segments.last().speed)
     }
 
     @Synchronized
@@ -729,7 +739,7 @@ internal class AudioPositionClock(
         skippedFrames = 0
         silenceOffsets.clear()
         segments.clear()
-        segments += Segment(lineFrame, lastPositionMs, playbackSpeed)
+        segments += Segment(lineFrame, lastPositionMs.toDouble(), playbackSpeed)
     }
 
     @Synchronized
@@ -762,7 +772,5 @@ internal class AudioPositionClock(
     private fun positionIn(
         segment: Segment,
         lineFrame: Long,
-    ): Long =
-        segment.mediaMs +
-            (((lineFrame - segment.lineFrame).coerceAtLeast(0L) * 1_000.0 * segment.speed) / sampleRate).toLong()
+    ): Double = segment.mediaMs + (lineFrame - segment.lineFrame).coerceAtLeast(0L) * 1_000.0 * segment.speed / sampleRate
 }

@@ -1,10 +1,18 @@
 @file:Suppress("UnstableApiUsage")
 
 import org.gradle.api.DefaultTask
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileSystemOperations
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.IgnoreEmptyDirectories
+import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitive
@@ -17,6 +25,7 @@ import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaToolchainService
 import org.gradle.jvm.toolchain.JvmVendorSpec
 import org.gradle.process.CommandLineArgumentProvider
+import org.gradle.process.ExecOperations
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 import java.io.File
@@ -241,6 +250,107 @@ val generateOpusTestFixture =
         outputDirectory.set(layout.buildDirectory.dir("generated/opusTestFixture"))
     }
 
+@CacheableTask
+abstract class BuildDesktopSignalsmithJni
+    @Inject
+    constructor(
+        private val exec: ExecOperations,
+        private val fs: FileSystemOperations,
+    ) : DefaultTask() {
+        @get:InputFiles
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        @get:IgnoreEmptyDirectories
+        abstract val sources: ConfigurableFileCollection
+
+        @get:Input
+        abstract val targetPlatform: Property<String>
+
+        @get:Internal
+        abstract val jniSourceFile: RegularFileProperty
+
+        @get:Internal
+        abstract val stretchJniDir: DirectoryProperty
+
+        @get:Internal
+        abstract val jniIncludeDir: DirectoryProperty
+
+        @get:OutputDirectory
+        abstract val outputDirectory: DirectoryProperty
+
+        @TaskAction
+        fun build() {
+            fs.delete { delete(outputDirectory) }
+            val platform = targetPlatform.get()
+            val includeDir = jniIncludeDir.get().asFile
+            if (!includeDir.resolve("jni.h").isFile) return
+
+            val (osDir, osInclude, libName, archFlag) =
+                when (platform) {
+                    "macosx-arm64" -> listOf("macos-aarch64", "darwin", "libsignalsmithStretchDesktopJNI.dylib", "arm64")
+                    "macosx-x86_64" -> listOf("macos-x86_64", "darwin", "libsignalsmithStretchDesktopJNI.dylib", "x86_64")
+                    "linux-arm64" -> listOf("linux-aarch64", "linux", "libsignalsmithStretchDesktopJNI.so", "")
+                    "linux-x86_64" -> listOf("linux-x86_64", "linux", "libsignalsmithStretchDesktopJNI.so", "")
+                    else -> return
+                }
+            val compiler =
+                if (platform.startsWith("macosx-")) {
+                    listOf("clang++", "/usr/bin/clang++").firstOrNull { path ->
+                        path == "clang++" || File(path).canExecute()
+                    } ?: return
+                } else {
+                    listOf("/usr/bin/clang++", "/usr/bin/g++").firstOrNull { File(it).canExecute() } ?: return
+                }
+            val outFile = outputDirectory.get().asFile.resolve("signalsmith/native/$osDir/$libName")
+            outFile.parentFile.mkdirs()
+            val stretchDir = stretchJniDir.get().asFile
+            val args =
+                buildList {
+                    add(compiler)
+                    add("-std=c++14")
+                    add("-O3")
+                    add("-fno-math-errno")
+                    add("-ffp-contract=fast")
+                    add("-shared")
+                    add("-fPIC")
+                    add("-fvisibility=hidden")
+                    if (archFlag.isNotEmpty()) {
+                        add("-arch")
+                        add(archFlag)
+                    }
+                    if (platform.startsWith("macosx-")) {
+                        add("-mmacosx-version-min=15.0")
+                    }
+                    add("-I${includeDir.absolutePath}")
+                    add("-I${includeDir.resolve(osInclude).absolutePath}")
+                    add("-I${stretchDir.absolutePath}")
+                    add("-I${stretchDir.resolve("third_party").absolutePath}")
+                    add(jniSourceFile.get().asFile.absolutePath)
+                    add("-o")
+                    add(outFile.absolutePath)
+                }
+            exec.exec { commandLine(args) }
+        }
+    }
+
+val desktopJavaToolchains = extensions.getByType<JavaToolchainService>()
+val buildDesktopSignalsmithJni =
+    tasks.register<BuildDesktopSignalsmithJni>("buildDesktopSignalsmithJni") {
+        val stretchDir = rootProject.layout.projectDirectory.dir("signalsmithStretch/src/main/jni")
+        val jniFile = layout.projectDirectory.file("src/desktopMain/jni/signalsmith_desktop_jni.cc")
+        val jdkInclude =
+            desktopJavaToolchains
+                .launcherFor {
+                    languageVersion.set(JavaLanguageVersion.of(25))
+                    vendor.set(jdkVendor)
+                }.map { it.metadata.installationPath.dir("include") }
+        sources.from(jniFile, stretchDir.file("stretch_session.h"), stretchDir.dir("third_party"))
+        targetPlatform.set(javacppPlatform)
+        jniSourceFile.set(jniFile)
+        stretchJniDir.set(stretchDir)
+        jniIncludeDir.set(jdkInclude)
+        outputDirectory.set(layout.buildDirectory.dir("generated/signalsmithDesktopResources"))
+    }
+
 tasks.matching { it.name == "lintAnalyzeAndroidHostTest" || it.name == "generateAndroidHostTestLintModel" }.configureEach {
     dependsOn(generateRoomMigrationTestSchemas, generateOpusTestFixture)
 }
@@ -426,6 +536,7 @@ kotlin {
         }
         getByName("desktopMain") {
             dependsOn(jvmSharedMain)
+            resources.srcDir(buildDesktopSignalsmithJni)
             dependencies {
                 implementation(libs.compose.desktop)
                 implementation(files(desktopIcu4j))
@@ -498,6 +609,11 @@ val prepareComposeResourceAliases =
     tasks.register<Sync>("prepareComposeResourceAliases") {
         val catalog = layout.projectDirectory.dir("src/commonMain/composeResources")
         from(catalog)
+        val signalsmithSources = rootProject.layout.projectDirectory.dir("signalsmithStretch/src/main/jni/third_party")
+        from(signalsmithSources) {
+            include("*/LICENSE.txt")
+            into("files/licenses")
+        }
         mapOf("in" to "id", "iw" to "he").forEach { (legacy, modern) ->
             from(catalog.dir("values-$legacy")) { into("values-$modern") }
         }

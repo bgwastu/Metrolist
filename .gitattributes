@@ -1,2 +1,4 @@
 # Preserve bundled upstream license text verbatim.
 shared/src/commonMain/composeResources/files/licenses/glyphmind/** -whitespace
+# Preserve the vendored Signalsmith sources and licenses verbatim.
+signalsmithStretch/src/main/jni/third_party/** -whitespace

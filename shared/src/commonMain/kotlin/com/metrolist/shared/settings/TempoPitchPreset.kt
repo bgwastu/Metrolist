@@ -29,7 +29,7 @@ data class TempoPitchPreset(
     ) {
         if (!canApply(speedEnabled, varispeed, onPitchChange != null)) return
         onSpeedChange(speed)
-        onPitchChange?.invoke(pitch)
+        if (!varispeed) onPitchChange?.invoke(pitch)
     }
 
     companion object {

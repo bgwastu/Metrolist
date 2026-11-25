@@ -62,5 +62,6 @@ if (useLocalInnerTubeX) {
 include(":shared")
 include(":listenTogetherProto")
 include(":opusDecoder")
+include(":signalsmithStretch")
 include(":androidApp")
 include(":desktopApp")

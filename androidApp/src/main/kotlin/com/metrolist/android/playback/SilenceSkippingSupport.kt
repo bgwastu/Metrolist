@@ -23,6 +23,8 @@ import com.metrolist.shared.playback.InstantSilenceDetector
 import com.metrolist.shared.playback.PlaybackSeekSource
 import com.metrolist.shared.playback.instantSilenceSeekTarget
 import com.metrolist.shared.settings.Settings
+import com.metrolist.signalsmith.SignalsmithAudioProcessor
+import com.metrolist.signalsmith.SignalsmithLibrary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -185,18 +187,37 @@ internal fun pitchSafeAudioSink(
     }
 }
 
-internal fun musicAudioProcessorChain(vararg processors: AudioProcessor): DefaultAudioSink.DefaultAudioProcessorChain =
-    DefaultAudioSink.DefaultAudioProcessorChain(
-        arrayOf(*processors),
+internal fun musicAudioProcessorChain(vararg processors: AudioProcessor): AudioProcessorChain {
+    val silenceSkippingAudioProcessor =
         SilenceSkippingAudioProcessor(
             MUSIC_MINIMUM_SILENCE_DURATION_US,
             SilenceSkippingAudioProcessor.DEFAULT_SILENCE_RETENTION_RATIO,
             SilenceSkippingAudioProcessor.DEFAULT_MAX_SILENCE_TO_KEEP_DURATION_US,
             SilenceSkippingAudioProcessor.DEFAULT_MIN_VOLUME_TO_KEEP_PERCENTAGE,
             (Short.MAX_VALUE * 10.0.pow(MUSIC_SILENCE_THRESHOLD_DB / 20.0)).toInt().toShort(),
-        ),
-        SonicAudioProcessor(),
-    )
+        )
+    val sonic = DefaultAudioSink.DefaultAudioProcessorChain(arrayOf(*processors), silenceSkippingAudioProcessor, SonicAudioProcessor())
+    if (!SignalsmithLibrary.isAvailable()) return sonic
+
+    val signalsmith = SignalsmithAudioProcessor()
+    val audioProcessors = sonic.audioProcessors + signalsmith
+    return object : AudioProcessorChain by sonic {
+        override fun getAudioProcessors(): Array<AudioProcessor> = audioProcessors
+
+        override fun applyPlaybackParameters(playbackParameters: PlaybackParameters): PlaybackParameters {
+            val speed = playbackParameters.speed
+            val pitch = playbackParameters.pitch
+            val useSignalsmith = speed != pitch
+            // Equal speed and pitch only require resampling.
+            sonic.applyPlaybackParameters(if (useSignalsmith) PlaybackParameters.DEFAULT else playbackParameters)
+            signalsmith.setPlaybackParameters(if (useSignalsmith) speed else 1f, if (useSignalsmith) pitch else 1f)
+            return playbackParameters
+        }
+
+        override fun getMediaDuration(playoutDuration: Long): Long =
+            if (signalsmith.isActive()) signalsmith.getMediaDuration(playoutDuration) else sonic.getMediaDuration(playoutDuration)
+    }
+}
 
 internal class SilenceDetectorAudioProcessor : BaseAudioProcessor() {
     @Volatile var enabled = false
