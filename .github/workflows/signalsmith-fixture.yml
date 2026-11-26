@@ -1,0 +1,58 @@
+name: Signalsmith fixture
+
+on:
+  push:
+    branches: [test/signalsmith-playback]
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    if: github.repository == 'bgwastu/Metrolist'
+    name: DSP fixture (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel, ubuntu-24.04, ubuntu-24.04-arm, windows-2025, windows-11-arm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Configure
+        if: matrix.runner != 'windows-11-arm'
+        run: cmake -S scripts/signalsmith-smoke -B fixture-build -DCMAKE_BUILD_TYPE=Release
+      - name: Configure Windows ARM64
+        if: matrix.runner == 'windows-11-arm'
+        run: cmake -S scripts/signalsmith-smoke -B fixture-build -A ARM64
+      - run: cmake --build fixture-build --config Release
+      - run: ctest --test-dir fixture-build -C Release --verbose
+
+  ios-simulator:
+    if: github.repository == 'bgwastu/Metrolist'
+    name: DSP fixture (iOS Simulator)
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build and run the arm64 simulator fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          stretch=signalsmithStretch/src/main/jni
+          sdk="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          xcrun --sdk iphonesimulator clang++ -target arm64-apple-ios18.0-simulator -isysroot "$sdk" \
+            -std=c++17 -O2 -I "$stretch" -I "$stretch/third_party" scripts/signalsmith-smoke/fixture.cpp \
+            -o "$RUNNER_TEMP/signalsmith-fixture"
+          device="$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          print(next(device["udid"] for runtime, devices in json.load(sys.stdin)["devices"].items()
+              if "iOS" in runtime for device in devices if device["name"].startswith("iPhone")))
+          ')"
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl spawn "$device" "$RUNNER_TEMP/signalsmith-fixture"
