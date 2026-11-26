@@ -75,6 +75,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+      - name: Install desktop runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2t64 libdrm2 libegl1 libfontconfig1 libfreetype6 libgl1 \
+            libpulse0 libva-drm2 libva2 libx11-6 libxcb-shm0
       - name: Prepare ARM64 WebView build
         if: runner.arch == 'ARM64'
         uses: ./.github/actions/prepare-linux-webview
