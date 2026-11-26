@@ -75,6 +75,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+      - name: Prepare ARM64 WebView build
+        if: runner.arch == 'ARM64'
+        uses: ./.github/actions/prepare-linux-webview
       - name: Package the desktop JVM app
         run: >
           ./gradlew --console=plain --no-parallel --max-workers=1
