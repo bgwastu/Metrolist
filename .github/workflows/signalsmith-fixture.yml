@@ -56,3 +56,42 @@ jobs:
           xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
           xcrun simctl spawn "$device" "$RUNNER_TEMP/signalsmith-fixture"
+
+  linux-package:
+    if: github.repository == 'bgwastu/Metrolist'
+    name: Packaged JVM playback (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Package the desktop JVM app
+        run: >
+          ./gradlew --console=plain --no-parallel --max-workers=1
+          "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+UseG1GC -Dfile.encoding=UTF-8"
+          :desktopApp:createDistributable
+      - name: Load the shipped library and verify cue timing
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S scripts/signalsmith-smoke -B fixture-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build fixture-build --config Release
+          package_jar="$(find desktopApp/build/compose/binaries/main/app -name 'shared-desktop*.jar' -print -quit)"
+          test -n "$package_jar"
+          fixture_dir="$RUNNER_TEMP/signalsmith-fixture"
+          mkdir -p "$fixture_dir"
+          fixture-build/signalsmith-fixture generate "$fixture_dir/input.pcm"
+          javac -d "$fixture_dir" scripts/signalsmith-smoke/PackagedSignalsmithFixture.java
+          java --enable-native-access=ALL-UNNAMED -Djava.awt.headless=true -cp "$fixture_dir:${package_jar%/*}/*" \
+            PackagedSignalsmithFixture desktop "$fixture_dir"
+          fixture-build/signalsmith-fixture check "$fixture_dir/slow.pcm" "$fixture_dir/fast.pcm"
